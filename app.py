@@ -6,7 +6,7 @@ import json
 import os
 
 from utils import natural_sort_key
-from utils.csv_parser import parse_plate_csv
+from utils.csv_parser import parse_plate_csv, get_parse_summary
 from utils.analysis import run_analysis, qc_check
 from utils.visualization import create_bar_chart, create_elisa_curve_chart
 from utils.export_excel import generate_excel
@@ -118,15 +118,23 @@ with st.sidebar:
     if uploaded:
         try:
             plates = parse_plate_csv(uploaded)
-            st.session_state.plates = plates
-            for pname in plates:
-                if pname not in st.session_state.well_maps:
-                    st.session_state.well_maps[pname] = {}
-                if pname not in st.session_state.excluded_wells:
-                    st.session_state.excluded_wells[pname] = set()
-            if st.session_state.current_plate not in plates:
-                st.session_state.current_plate = list(plates.keys())[0]
-            st.success(f"✅ {len(plates)} plates loaded")
+            if not plates:
+                st.warning("⚠️ 유효한 수치 데이터를 찾을 수 없습니다. 파일 형식을 확인해 주세요.")
+            else:
+                st.session_state.plates = plates
+                for pname in plates:
+                    if pname not in st.session_state.well_maps:
+                        st.session_state.well_maps[pname] = {}
+                    if pname not in st.session_state.excluded_wells:
+                        st.session_state.excluded_wells[pname] = set()
+                if st.session_state.current_plate not in plates:
+                    st.session_state.current_plate = list(plates.keys())[0]
+                st.success(f"✅ {len(plates)} plate(s) loaded")
+                # 파싱 요약 정보 표시
+                parse_info = get_parse_summary(plates)
+                for info in parse_info["plates"]:
+                    nan_msg = f" ({info['nan_cells']}개 비어있음)" if info['nan_cells'] > 0 else ""
+                    st.caption(f"📋 {info['name']}: {info['valid_cells']}/{info['total_cells']} cells 유효{nan_msg}")
         except Exception as e:
             st.error(f"CSV Parse Error: {e}")
 
@@ -188,18 +196,57 @@ with st.sidebar:
         st_count = st.number_input("Number of STs", min_value=1, max_value=20, value=8)
         st_start = st.number_input("Start Conc (ST1)", value=3200.0)
         st_end = st.number_input("End Conc", value=0.0)
-        st_fold = st.number_input("Fold Dilution", value=2.0)
+        st_fold = st.number_input("Fold Dilution", value=2.0, min_value=0.01)
         if st.button("Generate STs"):
             concs = {}
-            cur_conc = st_start
-            for i in range(1, st_count + 1):
-                if i == st_count:
-                    concs[f"ST{i}"] = st_end
-                else:
-                    concs[f"ST{i}"] = cur_conc
-                    cur_conc = cur_conc / st_fold
+            if st_start == 0 and st_end != 0:
+                # Start=0 → End Conc에서 역방향으로 fold 곱해가며 생성
+                cur_conc = st_end
+                for i in range(st_count, 0, -1):
+                    if i == st_count:
+                        concs[f"ST{i}"] = st_end
+                    elif i == 1:
+                        concs[f"ST{i}"] = 0.0
+                    else:
+                        cur_conc = cur_conc * st_fold
+                        concs[f"ST{i}"] = cur_conc
+                # 순서 정렬 (ST1, ST2, ...)
+                concs = dict(sorted(concs.items(), key=lambda x: int(x[0].replace("ST", ""))))
+            else:
+                # 기존 로직: Start Conc에서 fold 나눠가며 생성
+                cur_conc = st_start
+                for i in range(1, st_count + 1):
+                    if i == st_count:
+                        concs[f"ST{i}"] = st_end
+                    else:
+                        concs[f"ST{i}"] = cur_conc
+                        if st_fold != 0:
+                            cur_conc = cur_conc / st_fold
             st.session_state.elisa_st_concs = concs
+            # ST 농도를 custom_sample_names에 자동 설정
+            for st_label, conc_val in concs.items():
+                st.session_state.custom_sample_names[st_label] = str(conc_val)
             st.success("STs generated!")
+            st.rerun()
+        
+        # ── ST 농도 개별 수정 UI ──
+        if st.session_state.elisa_st_concs:
+            with st.expander("📝 ST 농도 편집", expanded=False):
+                updated_concs = {}
+                for st_label, conc_val in st.session_state.elisa_st_concs.items():
+                    new_conc = st.number_input(
+                        f"{st_label} Conc",
+                        value=float(conc_val),
+                        format="%.4f",
+                        key=f"st_conc_edit_{st_label}"
+                    )
+                    updated_concs[st_label] = new_conc
+                if st.button("Apply Changes", key="apply_st_conc_changes"):
+                    st.session_state.elisa_st_concs = updated_concs
+                    for st_label, conc_val in updated_concs.items():
+                        st.session_state.custom_sample_names[st_label] = str(conc_val)
+                    st.success("ST 농도가 업데이트되었습니다!")
+                    st.rerun()
         
         # Curve Fit Method: ELISA = 4PL only, Fluorescence = Linear / 4PL
         if assay_type == "ELISA":
@@ -221,8 +268,24 @@ with st.sidebar:
     st.session_state.current_tool = tool_key
 
     if tool_key == "ST" and assay_type in ["ELISA", "Fluorescence"]:
-        st_choice = st.selectbox("Select ST to Map", options=list(st.session_state.elisa_st_concs.keys()) if st.session_state.elisa_st_concs else ["ST1"])
-        st.session_state.current_st_choice = st_choice
+        # SM처럼 번호로 임의 ST 생성 가능
+        st_num = st.number_input("ST Number", min_value=1, max_value=50, value=1, key="st_num_input")
+        st_key = f"ST{st_num}"
+        st.session_state.current_st_choice = st_key
+        # elisa_st_concs에 없으면 자동 추가 (농도 0으로 초기화)
+        if st_key not in st.session_state.elisa_st_concs:
+            st.session_state.elisa_st_concs[st_key] = 0.0
+        # 해당 ST 농도 표시 & 즉석 편집
+        cur_st_conc = st.number_input(
+            f"{st_key} Concentration",
+            value=float(st.session_state.elisa_st_concs.get(st_key, 0.0)),
+            format="%.4f",
+            key=f"st_conc_inline_{st_key}"
+        )
+        if cur_st_conc != st.session_state.elisa_st_concs.get(st_key, 0.0):
+            st.session_state.elisa_st_concs[st_key] = cur_st_conc
+            st.session_state.custom_sample_names[st_key] = str(cur_st_conc)
+
 
     if tool_key in ("SM", "NC", "PC"):
         sm_num = st.number_input("Number", 1, 96, 1, key="sm_num")
@@ -301,8 +364,13 @@ if st.session_state.plates:
 
     with tab_plate:
         st.subheader("Plate Mapping")
+        # NaN → None 변환 (JSON에서 NaN은 유효하지 않으므로 null로 전달)
+        safe_values = [
+            [None if pd.isna(v) else v for v in row]
+            for row in plate_df.values.tolist()
+        ]
         selection = plate_grid(
-            plate_values=plate_df.values.tolist(),
+            plate_values=safe_values,
             well_map=cur_wm,
             key=f"grid_{cur_plate}",
         )
@@ -325,6 +393,18 @@ if st.session_state.plates:
                         num = st.session_state.get("sm_num", 1)
                         cur_wm[well_id] = {"type": tool_k, "label": f"{tool_k}{num}"}
                 st.rerun()
+
+
+        # ── 실제 분석 데이터 영역 미리보기 ──
+        with st.expander("📊 실제 분석 데이터 영역 미리보기", expanded=False):
+            st.dataframe(plate_df, use_container_width=True)
+            valid_count = int(plate_df.notna().sum().sum())
+            total_count = plate_df.size
+            nan_count = total_count - valid_count
+            if nan_count > 0:
+                st.info(f"ℹ️ 유효 데이터: {valid_count}/{total_count} cells ({nan_count}개 비어있음/NaN)")
+            else:
+                st.success(f"✅ 전체 {total_count}개 cell에 데이터가 있습니다.")
 
         st.markdown("##### 📋 Mapping Summary")
         summary = {}

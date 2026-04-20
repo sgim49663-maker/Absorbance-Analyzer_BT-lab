@@ -60,16 +60,22 @@ def run_analysis(plate_df, well_map, assay_type="Cell Viability", ref_1st=None, 
     def _get_value(well_id):
         row_letter = well_id[0].upper()
         col_num = well_id[1:]
-        ri = rows_map[row_letter]
-        ci = cols_map[col_num]
-        return float(plate_df.iloc[ri, ci])
+        ri = rows_map.get(row_letter)
+        ci = cols_map.get(col_num)
+        if ri is None or ci is None:
+            return np.nan
+        try:
+            val = plate_df.iloc[ri, ci]
+            return float(val) if pd.notna(val) else np.nan
+        except (IndexError, ValueError, TypeError):
+            return np.nan
 
     # ── 1. Blank 평균 계산 (excluded 제외) ──
     bl_values = [
         _get_value(wid) for wid, info in well_map.items()
         if info["type"] == "BL" and wid not in excluded_wells
     ]
-    bl_mean = np.mean(bl_values) if bl_values else 0.0
+    bl_mean = float(np.nanmean(bl_values)) if bl_values else 0.0
 
     if assay_type == "DPPH":
         bl_mean = 0.0
@@ -106,10 +112,10 @@ def run_analysis(plate_df, well_map, assay_type="Cell Viability", ref_1st=None, 
 
     if assay_type == "Cell Viability":
         if ref_1st and ref_1st in sample_data:
-            nc_mean = np.mean(sample_data[ref_1st])
+            nc_mean = np.nanmean(sample_data[ref_1st])
         else:
             nc_values = [v for l, vs in sample_data.items() if l.startswith("NC") for v in vs]
-            nc_mean = np.mean(nc_values) if nc_values else 1.0
+            nc_mean = np.nanmean(nc_values) if nc_values else 1.0
             if ref_1st is None:
                 nc_labels = [l for l in sample_data.keys() if l.startswith("NC")]
                 if nc_labels: ref_1st = nc_labels[0]
@@ -157,7 +163,7 @@ def run_analysis(plate_df, well_map, assay_type="Cell Viability", ref_1st=None, 
         st_x = []
         st_y = []
         for label, vals in st_groups.items():
-            mean_val = float(np.mean(vals))
+            mean_val = float(np.nanmean(vals))
             st_x.append(st_concs[label])
             st_y.append(mean_val)
         
@@ -249,20 +255,22 @@ def run_analysis(plate_df, well_map, assay_type="Cell Viability", ref_1st=None, 
     stat_rows = []
     for label in sorted(sample_pct.keys(), key=natural_sort_key):
         values = sample_pct[label]
-        mean_val = np.mean(values) if values else 0.0
-        sd_val = np.std(values, ddof=1) if len(values) > 1 else 0.0
-        n = len(values)
+        clean_values = [v for v in values if pd.notna(v)]
+        mean_val = np.nanmean(values) if clean_values else 0.0
+        sd_val = np.nanstd(values, ddof=1) if len(clean_values) > 1 else 0.0
+        n = len(clean_values)
 
         # T-test vs ref_1st
         if label == ref_1st:
             p_val_1 = np.nan
             sig_1 = "-"
         else:
-            if len(values) >= 2 and len(ref1_pct) >= 2:
-                if np.var(values) == 0 and np.var(ref1_pct) == 0:
+            ref1_clean = [v for v in ref1_pct if pd.notna(v)]
+            if len(clean_values) >= 2 and len(ref1_clean) >= 2:
+                if np.var(clean_values) == 0 and np.var(ref1_clean) == 0:
                     p_val_1 = np.nan
                 else:
-                    _, p_val_1 = stats.ttest_ind(values, ref1_pct, equal_var=False)
+                    _, p_val_1 = stats.ttest_ind(clean_values, ref1_clean, equal_var=False)
             else:
                 p_val_1 = np.nan
             sig_1 = _significance(p_val_1)
@@ -275,11 +283,12 @@ def run_analysis(plate_df, well_map, assay_type="Cell Viability", ref_1st=None, 
                 p_val_2 = np.nan
                 sig_2 = "-"
             else:
-                if len(values) >= 2 and len(ref2_pct) >= 2:
-                    if np.var(values) == 0 and np.var(ref2_pct) == 0:
+                ref2_clean = [v for v in ref2_pct if pd.notna(v)]
+                if len(clean_values) >= 2 and len(ref2_clean) >= 2:
+                    if np.var(clean_values) == 0 and np.var(ref2_clean) == 0:
                         p_val_2 = np.nan
                     else:
-                        _, p_val_2 = stats.ttest_ind(values, ref2_pct, equal_var=False)
+                        _, p_val_2 = stats.ttest_ind(clean_values, ref2_clean, equal_var=False)
                 sig_2 = _significance(p_val_2)
 
         display_name = custom_names.get(label, label)
@@ -334,7 +343,11 @@ def qc_check(plate_df, well_map, sd_threshold=0.5):
     def _get_value(well_id):
         row_letter = well_id[0].upper()
         col_num = well_id[1:]
-        return float(plate_df.iloc[rows_map[row_letter], cols_map[col_num]])
+        try:
+            val = plate_df.iloc[rows_map[row_letter], cols_map[col_num]]
+            return float(val) if pd.notna(val) else np.nan
+        except (KeyError, IndexError, ValueError, TypeError):
+            return np.nan
 
     # 그룹별 웰 & 값 수집
     groups = {}  # label -> [{"well": "A3", "value": 1.95}, ...]
@@ -347,8 +360,9 @@ def qc_check(plate_df, well_map, sd_threshold=0.5):
     for label in sorted(groups.keys(), key=natural_sort_key):
         wells = groups[label]
         values = [w["value"] for w in wells]
-        mean_val = float(np.mean(values))
-        sd_val = float(np.std(values, ddof=1)) if len(values) > 1 else 0.0
+        clean_vals = [v for v in values if pd.notna(v)]
+        mean_val = float(np.nanmean(values)) if clean_vals else 0.0
+        sd_val = float(np.nanstd(values, ddof=1)) if len(clean_vals) > 1 else 0.0
         cv_val = float((sd_val / mean_val) * 100) if mean_val != 0 else 0.0
         
         result.append({
