@@ -25,38 +25,7 @@
 
 ---
 
-## 1. 실행 방법
-
-```bash
-# 프로젝트 폴더로 이동
-cd absorbance-analysis
-
-# 앱 실행
-streamlit run app.py
-```
-
-브라우저가 자동으로 열리며 `http://localhost:8501` 에서 접속 가능합니다.
-
-### 필요 패키지
-
-```bash
-pip install streamlit pandas numpy scipy matplotlib openpyxl python-pptx
-```
-
----
-
-## 2. 지원하는 Assay 종류
-
-| Assay | 계산 방식 | Curve Fit |
-|---|---|---|
-| **Cell Viability** | `(Sample - Blank) / (Control - Blank) × 100 (%)` | — |
-| **DPPH** | `(1 - Sample / Control) × 100 (%)` | — |
-| **ELISA** | ST 기반 Standard Curve → 농도 역산 | **4PL 고정** |
-| **Fluorescence** | ST 기반 Standard Curve → 농도 역산 | Linear 또는 4PL 선택 |
-
----
-
-## 3. CSV 파일 형식
+## 1. CSV 또는 TXT 파일 형식
 
 플레이트 리더에서 출력된 **96-well plate 형식 CSV**를 사용합니다.
 
@@ -73,29 +42,38 @@ pip install streamlit pandas numpy scipy matplotlib openpyxl python-pptx
 > ...
 > ```
 
+## 2. Assay 종류
+
+| Assay | 계산 방식 | Curve Fit |
+|---|---|---|
+| **Cell Viability** | `(Sample - Blank) / (Control - Blank) × 100 (%)` | — |
+| **DPPH** | `(1 - Sample / Control) × 100 (%)` | — |
+| **ELISA** | ST 기반 Standard Curve → 농도 역산 | **4PL 고정** |
+| **Fluorescence** | ST 기반 Standard Curve → 농도 역산 | Linear 또는 4PL 선택 |
+
 ---
 
-## 4. Step-by-Step 사용 가이드
+## 3. Step-by-Step 사용 가이드
 
-### Step 1 — Assay 유형 선택
+### Step 1 — CSV 업로드
 
-페이지 상단의 라디오 버튼에서 분석 유형을 선택합니다.
+좌측 사이드바 **📂 1. Data Upload** 섹션에서 CSV 파일을 업로드합니다.
+
+- 지원 형식: `.csv`, `.txt`
+- 업로드 성공 시 `✅ N plates loaded` 메시지가 표시됩니다.
+- 플레이트가 여러 개인 경우 **Plate Selection** 버튼으로 전환합니다.
+
+---
+
+### Step 2 — Assay 유형 선택
+
+페이지 상단에서 분석 유형을 선택합니다.
 
 ```
 Cell Viability  |  DPPH  |  ELISA  |  Fluorescence
 ```
 
 선택한 Assay에 따라 계산 공식과 UI가 자동으로 변경됩니다.
-
----
-
-### Step 2 — CSV 업로드
-
-좌측 사이드바 **📂 1. Data Upload** 섹션에서 CSV 파일을 업로드합니다.
-
-- 지원 형식: `.csv`, `.txt`
-- 업로드 성공 시 `✅ N plates loaded` 메시지가 표시됩니다.
-- 플레이트가 여러 개인 경우 **Plate Selection** 라디오 버튼으로 전환합니다.
 
 ---
 
