@@ -143,7 +143,7 @@ def _find_plates_flexible(text):
     # 메타데이터 행 vs 실제 plate 데이터 행을 구분하는 핵심 로직
     # 실제 plate 데이터: ,0.885,1.161,1.367,0.857,... → 연속된 숫자 블록
     # 메타 행: 1,1,텍스트,21.1,21.2,텍스트 → 숫자가 흩어져 있음
-    data_mask = _calc_data_row_mask(numeric_df)
+    data_mask = _calc_data_row_mask(numeric_df, df)
 
     if not data_mask.any():
         return []
@@ -166,7 +166,7 @@ def _find_plates_flexible(text):
     return blocks
 
 
-def _calc_data_row_mask(numeric_df):
+def _calc_data_row_mask(numeric_df, str_df):
     """
     각 행이 plate 데이터인지 판별하는 마스크 생성.
 
@@ -178,6 +178,11 @@ def _calc_data_row_mask(numeric_df):
     mask = pd.Series(False, index=numeric_df.index)
 
     for idx in numeric_df.index:
+        # 1. 특정 키워드(Temperature 등)가 포함된 메타데이터 행 완전 무시
+        str_row_vals = str_df.loc[idx].fillna("").astype(str).str.lower()
+        if any(keyword in " ".join(str_row_vals) for keyword in ["temperature", "time", "wavelength", "kinetic"]):
+            continue
+
         row = numeric_df.loc[idx]
         valid_count = row.notna().sum()
 
@@ -225,9 +230,9 @@ def _extract_block(numeric_df, row_indices, blocks):
     if block_df.shape[1] < 1:
         return
 
-    # 최대 12열까지
+    # 최대 12열까지 (오른쪽 기준, 즉 마지막 12열 우선)
     if block_df.shape[1] > 12:
-        block_df = block_df.iloc[:, :12]
+        block_df = block_df.iloc[:, -12:]
 
     # 8행 단위로 plate 분할
     for start in range(0, len(row_indices), 8):
