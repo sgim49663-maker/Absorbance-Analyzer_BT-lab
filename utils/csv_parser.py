@@ -36,6 +36,7 @@ def parse_plate_csv(uploaded_file) -> dict:
     {"PLATE 1": DataFrame(8×12), ...}
     빈 셀은 NaN으로 유지됨. 데이터가 없으면 빈 dict 반환(에러 없음).
     """
+    uploaded_file.seek(0)
     raw = uploaded_file.read()
     text = _decode_raw(raw)
 
