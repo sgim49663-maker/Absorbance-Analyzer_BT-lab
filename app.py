@@ -194,8 +194,8 @@ with st.sidebar:
         tool_options = ["BL (Blank)", "ST (Standard)", "NC (Neg. Ctrl)", "PC (Pos. Ctrl)", "SM (Sample)", "Clear"]
         st.subheader("ST Configuration")
         st_count = st.number_input("Number of STs", min_value=1, max_value=20, value=8)
-        st_start = st.number_input("Start Conc (ST1)", value=3200.0)
-        st_end = st.number_input("End Conc", value=0.0)
+        st_start = st.number_input("Start Conc (ST1)", value=0.0)
+        st_end = st.number_input("End Conc", value=128.0)
         st_fold = st.number_input("Fold Dilution", value=2.0, min_value=0.01)
         if st.button("Generate STs"):
             concs = {}
