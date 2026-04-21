@@ -190,8 +190,13 @@ def _add_editable_charts(wb, result):
     ws.cell(row=row_offset-1, column=data_start_col+1, value="Mean")
     ws.cell(row=row_offset-1, column=data_start_col+2, value="SD")
 
-    sig_cols = [c for c in stats_df.columns if str(c).startswith("Sig vs")]
-    for j, c_name in enumerate(sig_cols):
+    sig_cols = [c for c in stats_df.columns if str(c).startswith("Sig vs") or str(c).startswith("p vs")]
+    
+    # Sort nicely if needed or just use as is, let's group p vs and Sig vs for the same ref together.
+    # Actually, stats_df.columns already has them in order: p vs Ref1, Sig vs Ref1, p vs Ref2, Sig vs Ref2
+    extra_cols = [c for c in stats_df.columns if str(c).startswith("p vs") or str(c).startswith("Sig vs")]
+    
+    for j, c_name in enumerate(extra_cols):
         ws.cell(row=row_offset-1, column=data_start_col+3+j, value=c_name)
 
     n_samples = len(stats_df)
@@ -205,13 +210,13 @@ def _add_editable_charts(wb, result):
         ws.cell(row=r, column=data_start_col, value=display)
         ws.cell(row=r, column=data_start_col+1, value=row.get(mean_col, 0))
         ws.cell(row=r, column=data_start_col+2, value=row.get(sd_col, 0))
-        for j, c_name in enumerate(sig_cols):
+        for j, c_name in enumerate(extra_cols):
             ws.cell(row=r, column=data_start_col+3+j, value=row.get(c_name, "-"))
         
     ws.column_dimensions[get_column_letter(data_start_col)].width = 15
     ws.column_dimensions[get_column_letter(data_start_col+1)].width = 10
     ws.column_dimensions[get_column_letter(data_start_col+2)].width = 10
-    for j in range(len(sig_cols)):
+    for j in range(len(extra_cols)):
         ws.column_dimensions[get_column_letter(data_start_col+3+j)].width = 12
 
 
