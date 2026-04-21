@@ -200,7 +200,7 @@ with st.sidebar:
         if st.button("Generate STs"):
             concs = {}
             if st_start == 0 and st_end != 0:
-                # Start=0 → End Conc에서 역방향으로 fold 곱해가며 생성
+                # Start=0 → End Conc에서 역방향으로 fold 나눠가며 생성
                 cur_conc = st_end
                 for i in range(st_count, 0, -1):
                     if i == st_count:
@@ -208,7 +208,8 @@ with st.sidebar:
                     elif i == 1:
                         concs[f"ST{i}"] = 0.0
                     else:
-                        cur_conc = cur_conc * st_fold
+                        if st_fold != 0:
+                            cur_conc = cur_conc / st_fold
                         concs[f"ST{i}"] = cur_conc
                 # 순서 정렬 (ST1, ST2, ...)
                 concs = dict(sorted(concs.items(), key=lambda x: int(x[0].replace("ST", ""))))
